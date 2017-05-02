@@ -31,7 +31,7 @@ are compatible with the S3 interface.
 ```
 
 | Option | Type | Default | Desc |
-| --- | --- |
+| --- | --- | --- | --- |
 | endpoint | string | `"s3.amazonaws.com"` | Endpoint of S3-compatible service |
 | port | number | `443` | Directory of configuration files |
 | secure | boolean | `true` | Environment variable used to detect configuration |
