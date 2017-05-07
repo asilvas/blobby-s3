@@ -3,6 +3,7 @@ import path from 'path';
 import farmhash from 'farmhash';
 import merge from 'merge';
 import async from 'async';
+import once from 'once';
 
 export default class BlobbyS3 {
   constructor(opts) {
@@ -22,6 +23,7 @@ export default class BlobbyS3 {
     const $this = this;
     const getInitBucketTask = bucketIndex => {
       return cb => {
+        cb = once(cb);
         const client = $this.getClient('', bucketIndex !== undefined ? bucketIndex : null);
         const req = client.request('PUT', '');
         req.on('response', res => cb());
@@ -55,6 +57,7 @@ export default class BlobbyS3 {
     opts = opts || {};
     const client = this.getClient(path.dirname(fileKey));
 
+    cb = once(cb);
     client.headFile(fileKey, function (err, res) {
       if (err) {
         return void cb(err);
@@ -83,6 +86,7 @@ export default class BlobbyS3 {
     const client = this.getClient(path.dirname(fileKey));
 
     const bufs = [];
+    cb = once(cb);
     client.getFile(fileKey, function (err, res) {
       if (err) {
         return void cb(err);
@@ -122,6 +126,7 @@ export default class BlobbyS3 {
     // NOTICE: unfortunately there is no known way of forcing S3 to persist the SOURCE ETag or LastModified, so comparing
     // between foreign sourges (S3 and FS) S3 will always report the file as different...
 
+    cb = once(cb);
     client.putBuffer(file.buffer, fileKey, getHeadersFromInfo(file.headers), function (err, res) {
       if (err) {
         return void cb(err);
@@ -143,6 +148,7 @@ export default class BlobbyS3 {
   remove(fileKey, cb) {
     const client = this.getClient(path.dirname(fileKey));
 
+    cb = once(cb);
     client.deleteFile(fileKey, function (err, res) {
       if (err) {
         return void cb(err);
@@ -194,6 +200,7 @@ export default class BlobbyS3 {
     if (opts.maxKeys) params['max-keys'] = opts.maxKeys;
 
     const client = this.getClient(dir, forcedBucketIndex);
+    cb = once(cb);
     client.list(params, (err, data, data2) => {
       if (err) return cb(err);
       if (data.Code) return cb(new Error(data.Code));
