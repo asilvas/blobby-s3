@@ -53,3 +53,13 @@ Your needs may vary, but leveraging `bucketStart` and `bucketEnd` to shard
 your directories across multiple buckets is recommended to avoid scaling
 limitations, be it storage, throughput, or otherwise. Even Amazon AWS S3
 has per-bucket limitations.
+
+
+## Initializing
+
+If you plan to leverage [Sharding](#sharding), you can run blobby's
+`initialize` command to pre-create the buckets for you to save time.
+
+```
+blobby initialize
+```
