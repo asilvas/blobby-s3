@@ -162,12 +162,47 @@ export default class BlobbyS3 {
     });
   }
 
+  /*
+   dir: unique id for storage
+   */
+  removeDirectory(dir, cb) {
+    const $this = this;
+    let filesDeleted = 0;
+    const _listAndDelete = (dir, lastKey, cb) => {
+      $this.list(dir, { maxKeys: 1000, delimiter: '', lastKey }, (err, files, dirs, lastKey) => {
+        if (err) return void cb(err);
+
+        if (files.length === 0) return void cb(null, filesDeleted);
+
+        const client = $this.getClient(dir);
+        client.deleteMultiple(files.map(f => f.Key), (err, res) => {
+          if (err) return void cb(err);
+
+          if (res.statusCode !== 200) {
+            return void cb(new Error('storage.s3.removeDirectory.error: '
+              + res.statusCode + ' for ' + (client.urlBase + '/' + dir))
+            );
+          }
+
+          filesDeleted += files.length;
+          if (!lastKey) return cb(null, filesDeleted); // no more to delete 
+
+          // continue recursive deletions
+          _listAndDelete(dir, lastKey, cb);
+        });
+      });
+    };
+
+    _listAndDelete(dir, null, cb);
+  }
+
   /* supported options:
    dir: Directory (prefix) to query
    opts: Options object
    opts.lastKey: if requesting beyond maxKeys (paging)
    opts.maxKeys: the max keys to return in one request
-   opts.deepQuery: true if you wish to query the world, not just the current directory
+   opts.delimiter: can be used to control delimiter of query independent of deepQuery
+   opts.deepQuery: true if you wish to query the world across buckets, not just the current directory
    cb(err, files, dirs, lastKey) - Callback fn
    cb.err: Error if any
    cb.files: An array of files: { Key, LastModified, ETag, Size, ... }
@@ -183,7 +218,7 @@ export default class BlobbyS3 {
 
     const params = {
       prefix: dir + ((dir.length === 0 || dir[dir.length - 1] === '/') ? '' : '/'), // prefix must always end with `/` if not root
-      delimiter: opts.deepQuery ? '' : '/'
+      delimiter: typeof opts.delimiter === 'string' ? opts.delimiter : opts.deepQuery ? '' : '/'
     };
     let forcedBucketIndex;
     const { bucketStart, bucketEnd } = this.options;
