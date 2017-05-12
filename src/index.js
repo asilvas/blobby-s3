@@ -262,6 +262,12 @@ export default class BlobbyS3 {
    one instance per request.
   */
   getClient(dir, forcedIndex) {
+    const bucket = this.getShard(dir, forcedIndex);
+
+    return knox.createClient(merge({}, this.options, { bucket }));
+  }
+
+  getShard(dir, forcedIndex) {
     const {bucketPrefix, bucketStart, bucketEnd} = this.options;
     let bucket = bucketPrefix;
     const range = bucketEnd - bucketStart;
@@ -278,7 +284,7 @@ export default class BlobbyS3 {
       }
     }
 
-    return knox.createClient(merge({}, this.options, { bucket }));
+    return bucket;
   }
 }
 
