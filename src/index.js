@@ -250,7 +250,7 @@ export default class BlobbyS3 {
         lastKey = `${forcedBucketIndex + 1}:`;
       } else if (lastKey) {
         // prefix with bucket
-        lastKey = `${forcedBucketIndex || ''}:${lastKey}`;
+        lastKey = `${typeof forcedBucketIndex === 'number' ? forcedBucketIndex : ''}:${lastKey}`;
       }
 
       cb(null, files, dirs, lastKey);
