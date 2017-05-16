@@ -9,8 +9,8 @@ export default class BlobbyS3 {
   constructor(opts) {
     this.options = merge({
       endpoint: 's3.amazonaws.com',
-      port: 443,
-      secure: true,
+      port: 80,
+      secure: false,
       style: 'path'
     }, opts);
   }
