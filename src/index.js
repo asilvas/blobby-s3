@@ -303,8 +303,9 @@ const gValidHeaders = {
   'content-type': 'ContentType'
 };
 const gReverseHeaders = {
-  ContentType: 'Content-Type'
-}
+  ContentType: 'Content-Type',
+  AccessControl: 'x-amz-acl'
+};
 
 function getInfoHeaders(reqHeaders) {
   const info = {};
