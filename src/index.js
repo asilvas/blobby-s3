@@ -26,7 +26,7 @@ export default class BlobbyS3 {
         cb = once(cb);
         const client = $this.getClient('', bucketIndex !== undefined ? bucketIndex : null);
         const req = client.request('PUT', '');
-        req.on('response', res => cb());
+        req.on('response', res => { res.resume(); cb() });
         req.on('error', cb);
         req.end();
       }
@@ -62,6 +62,8 @@ export default class BlobbyS3 {
       if (err) {
         return void cb(err);
       }
+
+      res.resume(); // discard response
 
       if (res.statusCode !== 200) {
         return void cb(new Error('storage.s3.fetch.error: '
@@ -132,6 +134,8 @@ export default class BlobbyS3 {
         return void cb(err);
       }
 
+      res.resume(); // discard response
+
       if (res.statusCode !== 200) {
         return void cb(new Error('storage.s3.store.error: '
           + res.statusCode + ' for ' + (client.urlBase + '/' + fileKey))
@@ -153,6 +157,8 @@ export default class BlobbyS3 {
       if (err) {
         return void cb(err);
       }
+
+      res.resume(); // discard response
 
       if (res.statusCode !== 200 && res.statusCode !== 204) {
         return void cb(new Error(`S3.remove executed 2xx for ${fileKey} but got ${res.statusCode}`));
@@ -177,6 +183,8 @@ export default class BlobbyS3 {
         const client = $this.getClient(dir);
         client.deleteMultiple(files.map(f => f.Key), (err, res) => {
           if (err) return void cb(err);
+
+          res.resume(); // discard response
 
           if (res.statusCode !== 200) {
             return void cb(new Error('storage.s3.removeDirectory.error: '
