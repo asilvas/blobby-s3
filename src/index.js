@@ -313,8 +313,10 @@ function getInfoHeaders(reqHeaders) {
     const kLower = k.toLowerCase();
     const validHeader = gValidHeaders[kLower];
     if (!validHeader) return;
-    info[validHeader] = validHeader === 'LastModified' ? new Date(reqHeaders[k]) : reqHeaders[k]; // map the values
-    if (validHeader === 'Size') info[validHeader] = parseInt(info[validHeader]); // number required for Size
+    const val = reqHeaders[k];
+    if (!val) return;
+    info[validHeader] = validHeader === 'LastModified' ? new Date(val) : val; // map the values
+    if (validHeader === 'Size') info[validHeader] = parseInt(val); // number required for Size
   });
 
   return info;
@@ -325,7 +327,9 @@ function getHeadersFromInfo(info) {
   Object.keys(info).forEach(k => {
     const validHeader = gReverseHeaders[k];
     if (!validHeader) return;
-    headers[validHeader] = info[k]; // map the values
+    const val = info[k];
+    if (!val) return;
+    headers[validHeader] = val; // map the values
   });
 
   return headers;
