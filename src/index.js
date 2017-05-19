@@ -146,6 +146,31 @@ export default class BlobbyS3 {
     });
   }
 
+
+  setACL(fileKey, acl, cb) {
+    const client = this.getClient(path.dirname(fileKey));
+
+    // NOTICE: unfortunately there is no known way of forcing S3 to persist the SOURCE ETag or LastModified, so comparing
+    // between foreign sourges (S3 and FS) S3 will always report the file as different...
+
+    cb = once(cb);
+
+    const req = client.request('PUT', encodeSpecialCharacters(fileKey) + '?acl', { 'x-amz-acl': acl });
+    req.on('response', res => {
+      if (res.statusCode !== 200) {
+        return void cb(new Error('storage.s3.setACL.error: '
+          + res.statusCode + ' for ' + (client.urlBase + '/' + fileKey))
+        );
+      }
+
+      res.resume(); // discard response
+      
+      cb();
+    });
+    req.on('error', cb);
+    req.end();
+  }
+
   /*
    fileKey: unique id for storage
    */
@@ -333,4 +358,15 @@ function getHeadersFromInfo(info) {
   });
 
   return headers;
+}
+
+/* PULLED FROM knox
+  https://github.com/Automattic/knox/blob/master/lib/client.js#L64-L70
+*/
+function encodeSpecialCharacters(filename) {
+  // Note: these characters are valid in URIs, but S3 does not like them for
+  // some reason.
+  return encodeURI(filename).replace(/[!'()#*+? ]/g, function (char) {
+    return '%' + char.charCodeAt(0).toString(16);
+  });
 }
