@@ -269,9 +269,11 @@ export default class BlobbyS3 {
 
     const client = this.getClient(dir, forcedBucketIndex);
     cb = once(cb);
-    client.list(params, (err, data, data2) => {
-      if (err) return cb(err);
-      if (data.Code) return cb(new Error(data.Code));
+    client.list(params, (err, data) => {
+      data = data || {}; // default in case of error
+      if (err) return void cb(err);
+      // only return error if not related to key not found (commonly due to bucket deletion)
+      if (data.Code && data.Code !== 'NoSuchKey') return cb(new Error(data.Code));
 
       const files = data.Contents || [];
       // remove S3's tail delimiter
