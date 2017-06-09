@@ -369,7 +369,7 @@ export default class BlobbyS3 {
     client.request(opts, res => {
       if (res.statusCode !== 200) {
         return void cb(new Error('http.request.error: '
-          + res.statusCode + ' for ' + uri)
+          + res.statusCode + ' for ' + opts.path)
         );
       }
 
