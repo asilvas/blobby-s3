@@ -4,6 +4,8 @@ import farmhash from 'farmhash';
 import merge from 'merge';
 import async from 'async';
 import once from 'once';
+import http from 'http';
+import https from 'https';
 
 export default class BlobbyS3 {
   constructor(opts) {
@@ -55,9 +57,23 @@ export default class BlobbyS3 {
       opts = null;
     }
     opts = opts || {};
-    const client = this.getClient(path.dirname(fileKey));
-
+    const dir = path.dirname(fileKey);
     cb = once(cb);
+
+    if (opts.acl === 'public') {
+      const bucket = this.getShard(dir);
+
+      return void this.httpRequest('HEAD', bucket, fileKey, (err, res, data) => {
+        if (err) {
+          return void cb(err);
+        }
+
+        cb(null, getInfoHeaders(res.headers));
+      });
+    }
+    // else assume private
+
+    const client = this.getClient(dir);
     client.headFile(fileKey, function (err, res) {
       if (err) {
         return void cb(err);
@@ -85,10 +101,24 @@ export default class BlobbyS3 {
       opts = null;
     }
     opts = opts || {};
-    const client = this.getClient(path.dirname(fileKey));
-
-    const bufs = [];
     cb = once(cb);
+    const dir = path.dirname(fileKey);
+
+    if (opts.acl === 'public') {
+      const bucket = this.getShard(dir);
+
+      return void this.httpRequest('GET', bucket, fileKey, (err, res, data) => {
+        if (err) {
+          return void cb(err);
+        }
+
+        cb(null, getInfoHeaders(res.headers), data);
+      });
+    }
+    // else assume private
+    
+    const client = this.getClient(dir);
+    const bufs = [];
     client.getFile(fileKey, function (err, res) {
       if (err) {
         return void cb(err);
@@ -320,6 +350,35 @@ export default class BlobbyS3 {
     }
 
     return bucket;
+  }
+
+  httpRequest(method, bucket, fileKey, cb) {
+    var client = this.options.secure ? https : http;
+
+    const opts = {
+      protocol: this.options.secure ? 'https:' : 'http:',
+      host: this.options.style === 'path' ? this.options.endpoint
+        : `${bucket}.${this.options.endpoint}`, // fallback to subdomain
+      port: this.options.port,
+      method,
+      path: this.options.style === 'path' ? `/${bucket}/${fileKey}`
+        : `/${fileKey}`
+    };
+
+    var bufs = [];
+    client.request(opts, res => {
+      if (res.statusCode !== 200) {
+        return void cb(new Error('http.request.error: '
+          + res.statusCode + ' for ' + uri)
+        );
+      }
+
+      res.on('data', chunk => bufs.push(chunk));
+
+      res.on('end', () => cb(null, res, Buffer.concat(bufs)));
+    }).on('error', err => {
+      cb(err);
+    }).end();
   }
 }
 
