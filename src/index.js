@@ -13,8 +13,13 @@ export default class BlobbyS3 {
       endpoint: 's3.amazonaws.com',
       port: 80,
       secure: false,
-      style: 'path'
+      style: 'path',
+      agent: undefined // use http.globalAgent by default
     }, opts);
+
+    if (typeof this.options.agent === 'object') {
+      this.options.agent = new http.Agent(this.options.agent);
+    }
   }
 
   initialize(cb) {
@@ -360,6 +365,7 @@ export default class BlobbyS3 {
       host: this.options.style === 'path' ? this.options.endpoint
         : `${bucket}.${this.options.endpoint}`, // fallback to subdomain
       port: this.options.port,
+      agent: this.options.agent, // use same agent as knox
       method,
       path: this.options.style === 'path' ? `/${bucket}/${fileKey}`
         : `/${fileKey}`
