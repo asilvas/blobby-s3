@@ -13,8 +13,16 @@ export default class BlobbyS3 {
       endpoint: 's3.amazonaws.com',
       port: 80,
       secure: false,
-      style: 'path'
+      style: 'path',
+      agent: undefined // use http.globalAgent by default
     }, opts);
+
+    if (typeof this.options.agent === 'object') {
+      this.agent = new http.Agent(this.options.agent);
+    } else {
+      this.agent = this.options.agent; // otherwise forward value (be it false or undefined)
+    }
+    delete this.options.agent; // remove from options to avoid needless merging
   }
 
   initialize(cb) {
@@ -329,7 +337,9 @@ export default class BlobbyS3 {
   getClient(dir, forcedIndex) {
     const bucket = this.getShard(dir, forcedIndex);
 
-    return knox.createClient(merge({}, this.options, { bucket }));
+    const opts = merge({ }, this.options, { bucket });
+    opts.agent = this.agent;
+    return knox.createClient(opts);
   }
 
   getShard(dir, forcedIndex) {
@@ -360,6 +370,7 @@ export default class BlobbyS3 {
       host: this.options.style === 'path' ? this.options.endpoint
         : `${bucket}.${this.options.endpoint}`, // fallback to subdomain
       port: this.options.port,
+      agent: this.agent, // use same agent as knox
       method,
       path: this.options.style === 'path' ? `/${bucket}/${fileKey}`
         : `/${fileKey}`
