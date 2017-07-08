@@ -180,7 +180,7 @@ export default class BlobbyS3 {
         );
       }
 
-      cb();
+      cb(null, getInfoHeaders(res.headers));
     });
   }
 
