@@ -372,8 +372,8 @@ export default class BlobbyS3 {
       port: this.options.port,
       agent: this.agent, // use same agent as knox
       method,
-      path: this.options.style === 'path' ? `/${bucket}/${fileKey}`
-        : `/${fileKey}`
+      path: encodeSpecialCharacters(this.options.style === 'path' ? `/${bucket}/${fileKey}`
+        : `/${fileKey}`)
     };
 
     var bufs = [];
