@@ -363,9 +363,8 @@ export default class BlobbyS3 {
    This is not a persisted client, so it's OK to create
    one instance per request.
   */
-  getClient(dir, options) {
-    const forcedIndex = options.forcedIndex;
-    const bucket = options.bucket || this.getShard(dir, forcedIndex);
+  getClient(dir, { forcedIndex, bucket } = {}) {
+    bucket = bucket || this.getShard(dir, forcedIndex);
 
     const opts = merge({ }, this.options, { bucket });
     opts.agent = this.agent;
