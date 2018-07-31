@@ -164,7 +164,7 @@ export default class BlobbyS3 {
     const client = this.getClient(path.dirname(fileKey));
 
     // NOTICE: unfortunately there is no known way of forcing S3 to persist the SOURCE ETag or LastModified, so comparing
-    // between foreign sourges (S3 and FS) S3 will always report the file as different...
+    // between foreign sources (S3 and FS) S3 will always report the file as different...
 
     cb = once(cb);
     client.putBuffer(file.buffer, fileKey, getHeadersFromInfo(file.headers), function (err, res) {
@@ -184,12 +184,41 @@ export default class BlobbyS3 {
     });
   }
 
+  // support for x-amz-copy-source: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectCOPY.html
+  copy(sourceKey, destKey, options /* optional */, cb) {
+    if (typeof options === 'function') {
+      cb = options;
+      options = {}; // optional
+    }
+
+    const client = this.getClient(path.dirname(sourceKey));
+    const destBucket = this.getShard(path.dirname(destKey));
+
+    cb = once(cb);
+    const destHeaders = {
+      'x-amz-acl': options.AccessControl || 'public-read'
+    };
+    const req = client.copyTo(sourceKey, destBucket, destKey, destHeaders);
+    req.on('response', res => {
+      if (res.statusCode !== 200) {
+        return void cb(new Error('storage.s3.copy.error: '
+          + res.statusCode + ' for ' + (client.urlBase + '/' + destKey))
+        );
+      }
+
+      res.resume(); // discard response
+      
+      cb();
+    });
+    req.on('error', cb);
+    req.end();
+  }
 
   setACL(fileKey, acl, cb) {
     const client = this.getClient(path.dirname(fileKey));
 
     // NOTICE: unfortunately there is no known way of forcing S3 to persist the SOURCE ETag or LastModified, so comparing
-    // between foreign sourges (S3 and FS) S3 will always report the file as different...
+    // between foreign sources (S3 and FS) S3 will always report the file as different...
 
     cb = once(cb);
 
