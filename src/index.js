@@ -34,7 +34,7 @@ export default class BlobbyS3 {
     const getInitBucketTask = bucketIndex => {
       return cb => {
         cb = once(cb);
-        const client = $this.getClient('', bucketIndex !== undefined ? bucketIndex : null);
+        const client = $this.getClient('', { forcedIndex: bucketIndex !== undefined ? bucketIndex : null });
         const req = client.request('PUT', '');
         req.on('response', res => { res.resume(); cb() });
         req.on('error', cb);
@@ -191,7 +191,7 @@ export default class BlobbyS3 {
       options = {}; // optional
     }
 
-    const client = this.getClient(path.dirname(sourceKey));
+    const client = this.getClient(path.dirname(sourceKey), { bucket: options.bucket });
     const destBucket = this.getShard(path.dirname(destKey));
 
     cb = once(cb);
@@ -334,7 +334,7 @@ export default class BlobbyS3 {
     }
     if (opts.maxKeys) params['max-keys'] = opts.maxKeys;
 
-    const client = this.getClient(dir, forcedBucketIndex);
+    const client = this.getClient(dir, { forcedIndex: forcedBucketIndex });
     cb = once(cb);
     client.list(params, (err, data) => {
       data = data || {}; // default in case of error
@@ -363,8 +363,9 @@ export default class BlobbyS3 {
    This is not a persisted client, so it's OK to create
    one instance per request.
   */
-  getClient(dir, forcedIndex) {
-    const bucket = this.getShard(dir, forcedIndex);
+  getClient(dir, options) {
+    const forcedIndex = options.forcedIndex;
+    const bucket = options.bucket || this.getShard(dir, forcedIndex);
 
     const opts = merge({ }, this.options, { bucket });
     opts.agent = this.agent;
