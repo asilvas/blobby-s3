@@ -438,7 +438,13 @@ function getInfoHeaders(reqHeaders) {
   Object.keys(reqHeaders).forEach(k => {
     const kLower = k.toLowerCase();
     const validHeader = gValidHeaders[kLower];
-    if (!validHeader) return;
+    if (!validHeader) {
+      if (/^x-amz-meta-/.test(kLower)) {
+        info.CustomHeaders = info.CustomHeaders || {};
+        info.CustomHeaders[kLower.substr(2)] = reqHeaders[k];
+      }
+      return;
+    }
     const val = reqHeaders[k];
     if (!val) return;
     info[validHeader] = validHeader === 'LastModified' ? new Date(val) : val; // map the values
@@ -456,6 +462,11 @@ function getHeadersFromInfo(info) {
     const val = info[k];
     if (!val) return;
     headers[validHeader] = val; // map the values
+  });
+  Object.keys(info.CustomHeaders || {}).forEach(k => {
+    const validHeader = /^amz\-meta\-/i.test(k);
+    if (!validHeader) return;
+    headers['x-' + k] = info.CustomHeaders[k];
   });
 
   return headers;
