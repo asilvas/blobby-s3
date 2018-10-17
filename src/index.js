@@ -6,6 +6,7 @@ import async from 'async';
 import once from 'once';
 import http from 'http';
 import https from 'https';
+import crypto from 'crypto';
 
 export default class BlobbyS3 {
   constructor(opts) {
@@ -26,7 +27,7 @@ export default class BlobbyS3 {
   }
 
   initialize(cb) {
-    const {bucketPrefix, bucketStart, bucketEnd} = this.options;
+    const { bucketPrefix, bucketStart, bucketEnd, lifecycle } = this.options;
 
     const initBucketTasks = [];
 
@@ -35,8 +36,35 @@ export default class BlobbyS3 {
       return cb => {
         cb = once(cb);
         const client = $this.getClient('', { forcedIndex: bucketIndex !== undefined ? bucketIndex : null });
+
         const req = client.request('PUT', '');
-        req.on('response', res => { res.resume(); cb() });
+        req.on('response', res => {
+          res.resume();
+          cb();
+
+          if (lifecycle && lifecycle.days) {
+            const body = `<LifecycleConfiguration><Rule><ID>TTL</ID><Filter><Prefix>${lifecycle.prefix || ''}</Prefix></Filter><Status>Enabled</Status><Expiration><Days>${lifecycle.days}</Days></Expiration></Rule></LifecycleConfiguration>`;
+            const bodyMD5 = crypto.createHash('md5').update(body).digest('base64');
+            const req2 = client.request('PUT', '/?lifecycle', {
+              'Content-MD5': bodyMD5,
+              'Content-Length': body.length
+            });
+            req2.on('response', res => {
+              if (res.statusCode <= 204) {
+                console.log('LifeCycle rules applied successfully');
+                return void res.resume();
+              }
+
+              console.error('LifeCycle request:', body);
+              console.error('LifeCycle rules failed with status:', res.statusCode);
+
+              res.setEncoding('utf8');
+              res.on('data', data => console.error('LifeCycle response:', data));
+            });
+            req2.write(body);
+            req2.end();
+          }
+        });
         req.on('error', cb);
         req.end();
       }
