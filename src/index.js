@@ -1,7 +1,7 @@
 import knox from 'knox';
 import path from 'path';
 import farmhash from 'farmhash';
-import merge from 'merge';
+import extend from 'extend';
 import async from 'async';
 import once from 'once';
 import http from 'http';
@@ -10,7 +10,7 @@ import crypto from 'crypto';
 
 export default class BlobbyS3 {
   constructor(opts) {
-    this.options = merge({
+    this.options = extend({
       endpoint: 's3.amazonaws.com',
       port: 80,
       secure: false,
@@ -394,7 +394,7 @@ export default class BlobbyS3 {
   getClient(dir, { forcedIndex, bucket } = {}) {
     bucket = bucket || this.getShard(dir, forcedIndex);
 
-    const opts = merge({ }, this.options, { bucket });
+    const opts = extend(true, { }, this.options, { bucket });
     opts.agent = this.agent;
     return knox.createClient(opts);
   }
