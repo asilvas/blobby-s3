@@ -17,6 +17,9 @@ export default class BlobbyS3 {
       style: 'path',
       agent: undefined // use http.globalAgent by default
     }, opts);
+    if (this.options.port === 'none') {
+      delete this.options.port;
+    }
 
     if (typeof this.options.agent === 'object') {
       this.agent = new http.Agent(this.options.agent);
