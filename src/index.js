@@ -237,8 +237,7 @@ export default class BlobbyS3 {
       }
 
       res.resume(); // discard response
-      
-      cb();
+      cb(null, getInfoHeaders(res.headers));
     });
     req.on('error', cb);
     req.end();
