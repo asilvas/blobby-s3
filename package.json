@@ -1,15 +1,11 @@
 {
   "name": "blobby-s3",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "description": "An S3 client for Blobby, powered by Knox",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "build": "babel ./src --out-dir ./lib",
-    "clean": "rimraf ./lib",
-    "prepublish": "npm run clean && npm run build",
     "start": "node ./index.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "watch": "babel ./src --out-dir ./lib --watch"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
@@ -22,22 +18,14 @@
   },
   "homepage": "https://github.com/asilvas/blobby-s3#readme",
   "dependencies": {
-    "async": "^2.6.1",
-    "extend": "^3.0.2",
+    "aws-sdk": "^2.476.0",
     "farmhash": "^2.1.0",
-    "knox": "^0.9.2",
-    "once": "^1.4.0"
+    "once": "^1.4.0",
+    "p-limit": "^2.2.0"
   },
-  "devDependencies": {
-    "babel-cli": "^6.26.0",
-    "babel-plugin-transform-object-rest-spread": "^6.26.0",
-    "babel-preset-env": "^1.7.0",
-    "rimraf": "^2.6.2"
-  },
+  "devDependencies": {},
   "files": [
-    "lib",
     "src",
-    "index.js",
     "LICENSE",
     "README.md",
     "package.json"

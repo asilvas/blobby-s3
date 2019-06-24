@@ -1,9 +1,7 @@
 # blobby-s3
 
 An S3 client for [Blobby](https://github.com/asilvas/blobby), powered
-by [Knox](https://github.com/Automattic/knox). Does NOT require S3 from
-Amazon AWS, and is designed to work across other storage systems that
-are compatible with the S3 interface.
+by [AWS S3](https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#constructor-property).
 
 
 
@@ -15,12 +13,11 @@ are compatible with the S3 interface.
   storage: {
     app: {
       options: {
-        endpoint: 's3.amazonaws.com',
-        port: 443,
-        secure: true,
-        key: 'myAccessKey',
-        secret: 'mySecretKey',
-        style: 'path',
+        endpoint: 'https://s3.amazonaws.com',
+        accessKeyId: 'myAccessKey',
+        secretAccessKey: 'mySecretKey',
+        s3ForcePathStyle: false,
+        s3BucketEndpoint: false,
         bucketPrefix: 'myBucket', // myBucket1-100
         bucketStart: 1,
         bucketEnd: 100
@@ -30,14 +27,15 @@ are compatible with the S3 interface.
 }
 ```
 
+See AWS S3 for full options list: https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/S3.html#constructor-property
+
 | Option | Type | Default | Desc |
 | --- | --- | --- | --- |
-| endpoint | string | `"s3.amazonaws.com"` | Endpoint of S3-compatible service |
-| port | number | `443` | Directory of configuration files |
-| secure | boolean | `true` | Environment variable used to detect configuration |
-| key | string | (required) | Access key |
-| secret | string | (required) | Secret |
-| style | string | `"path"` | May use `"virtualHosted"` if bucket is not in path |
+| endpoint | string | `"https://s3.amazonaws.com"` | Endpoint of S3-compatible service |
+| accessKeyId | string | (required) | Access key |
+| secretAccessKey | string | (required) | Secret |
+| s3ForcePathStyle | bool | `true` | Force path style |
+| s3BucketEndpoint | bool | `false` | False if endpoint is the root API, not the bucket endpoint |
 | bucketPrefix | string | (required) | Prefix of the final bucket name |
 | bucketStart | number | `false` | If valid number, files will be sharded across buckets ranging from bucketStart to bucketEnd |
 | bucketEnd | number | `false` | If valid number, files will be sharded across buckets ranging from bucketStart to bucketEnd |

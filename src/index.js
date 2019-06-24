@@ -1,74 +1,118 @@
-import knox from 'knox';
-import path from 'path';
-import farmhash from 'farmhash';
-import extend from 'extend';
-import async from 'async';
-import once from 'once';
-import http from 'http';
-import https from 'https';
-import crypto from 'crypto';
+const path = require('path');
+const farmhash = require('farmhash');
+const once = require('once');
+const http = require('http');
+const https = require('https');
+const URL = require('url');
+const S3 = require('aws-sdk/clients/s3');
+const plimit = require('p-limit');
 
-export default class BlobbyS3 {
+module.exports = class BlobbyS3 {
   constructor(opts) {
-    this.options = extend({
+    this.options = Object.assign({
       endpoint: 's3.amazonaws.com',
-      port: 80,
-      secure: false,
-      style: 'path',
-      agent: undefined // use http.globalAgent by default
+      s3ForcePathStyle: true,
+      s3BucketEndpoint: false,
     }, opts);
 
-    if (typeof this.options.agent === 'object') {
-      this.agent = new http.Agent(this.options.agent);
-    } else {
-      this.agent = this.options.agent; // otherwise forward value (be it false or undefined)
+    // some backward compatibility to ease transition from knox
+    if (typeof this.options.style === 'string') {
+      this.options.s3ForcePathStyle = this.options.style === 'path';
+      delete this.options.style;
     }
-    delete this.options.agent; // remove from options to avoid needless merging
+    if (typeof this.options.key === 'string') {
+      this.options.accessKeyId = this.options.key;
+      delete this.options.key;
+    }
+    if (typeof this.options.secret === 'string') {
+      this.options.secretAccessKey = this.options.secret;
+      delete this.options.secret;
+    }
+    if (this.options.agent) {
+      this.options.httpOptions = { agent: this.options.agent };
+      delete this.options.agent;
+    }
+    if (this.options.httpOptions && typeof this.options.httpOptions.agent === 'object') {
+      this.httpOptions.agent = new http.Agent(this.options.httpOptions.agent);
+    }
+
+    this.endpoint = URL.parse(this.options.endpoint);
+    this.agent = this.options.httpOptions && this.options.httpOptions.agent;
+  }
+
+  /*
+   This is not a persisted client, so it's OK to create
+   one instance per request.
+  */
+  getClient(dir, { forcedIndex, bucket } = {}) {
+    bucket = bucket || this.getShard(dir, forcedIndex);
+
+    // copy
+    const { bucketPrefix, bucketStart, bucketEnd, ...opts } = this.options;
+
+    const s3 = new S3(opts);
+    s3.bucket = bucket;
+
+    return s3;
+  }
+
+  getShard(dir, forcedIndex) {
+    const { bucketPrefix, bucketStart, bucketEnd } = this.options;
+    let bucket = bucketPrefix;
+    const range = bucketEnd - bucketStart;
+    if (!isNaN(range) && range > 0) {
+      if (typeof forcedIndex === 'number' && forcedIndex >= bucketStart && forcedIndex <= bucketEnd) {
+        // if forced index is provided, use that instead
+        bucket += forcedIndex;
+      } else { // compute bucket by dir hash
+        // hash only needs to span directory structure, and is OK to be consistent
+        // across environments for predictability and ease of maintenance
+        const hash = farmhash.hash32(dir);
+        const bucketIndex = hash % (range + 1); // 0-N
+        bucket += (bucketStart + bucketIndex);
+      }
+    }
+
+    return bucket;
   }
 
   initialize(cb) {
     const { bucketPrefix, bucketStart, bucketEnd, lifecycle } = this.options;
 
+    if (!lifecycle || !lifecycle.days) return void cb();
+
     const initBucketTasks = [];
 
+    const limit = plimit(10);
+
     const $this = this;
-    const getInitBucketTask = bucketIndex => {
-      return cb => {
-        cb = once(cb);
-        const client = $this.getClient('', { forcedIndex: bucketIndex !== undefined ? bucketIndex : null });
+    const getInitBucketTask = bucketIndex => limit(() => {
+      const client = $this.getClient('', { forcedIndex: bucketIndex !== undefined ? bucketIndex : null });
 
-        const req = client.request('PUT', '');
-        req.on('response', res => {
-          res.resume();
-          cb();
-
-          if (lifecycle && lifecycle.days) {
-            const body = `<LifecycleConfiguration><Rule><ID>TTL</ID><Filter><Prefix>${lifecycle.prefix || ''}</Prefix></Filter><Status>Enabled</Status><Expiration><Days>${lifecycle.days}</Days></Expiration></Rule></LifecycleConfiguration>`;
-            const bodyMD5 = crypto.createHash('md5').update(body).digest('base64');
-            const req2 = client.request('PUT', '/?lifecycle', {
-              'Content-MD5': bodyMD5,
-              'Content-Length': body.length
-            });
-            req2.on('response', res => {
-              if (res.statusCode <= 204) {
-                console.log('LifeCycle rules applied successfully');
-                return void res.resume();
-              }
-
-              console.error('LifeCycle request:', body);
-              console.error('LifeCycle rules failed with status:', res.statusCode);
-
-              res.setEncoding('utf8');
-              res.on('data', data => console.error('LifeCycle response:', data));
-            });
-            req2.write(body);
-            req2.end();
+      const params = {
+        Bucket: client.bucket,
+        LifecycleConfiguration: {
+         Rules: [
+          {
+            ID: 'TTL',
+            Filter: {
+              Prefix: lifecycle.prefix || ''
+            },
+            Status: "Enabled",
+            Expiration: {
+              Days: lifecycle.days
+            }
           }
-        });
-        req.on('error', cb);
-        req.end();
-      }
-    };
+         ]
+        }
+       };
+
+      return client.putBucketLifecycleConfiguration(params).promise()
+        .then(() => console.log('LifeCycle rules applied successfully'))
+        .catch(err => console.error('Failed to apply lifecycle rules:', params, err.stack || err))
+      ;
+
+    });
 
     const range = bucketEnd - bucketStart;
     if (!isNaN(range) && range > 0) {
@@ -80,7 +124,8 @@ export default class BlobbyS3 {
       // single bucket mode
       initBucketTasks.push(getInitBucketTask(bucketPrefix));
     }
-    async.parallelLimit(initBucketTasks, 10, cb);
+
+    Promise.all(initBucketTasks).then(cb).catch(cb);
   }
 
   /*
@@ -94,7 +139,6 @@ export default class BlobbyS3 {
     }
     opts = opts || {};
     const dir = path.dirname(fileKey);
-    cb = once(cb);
 
     if (opts.acl === 'public') {
       const bucket = this.getShard(dir);
@@ -110,20 +154,16 @@ export default class BlobbyS3 {
     // else assume private
 
     const client = this.getClient(dir);
-    client.headFile(fileKey, function (err, res) {
+    const params = {
+      Bucket: client.bucket,
+      Key: fileKey
+    };
+    client.headObject(params, (err, data) => {
       if (err) {
         return void cb(err);
       }
 
-      res.resume(); // discard response
-
-      if (res.statusCode !== 200) {
-        return void cb(new Error('storage.s3.fetch.error: '
-          + res.statusCode + ' for ' + (client.urlBase + '/' + fileKey))
-        );
-      }
-
-      cb(null, getInfoHeaders(res.headers));
+      cb(null, getInfoHeaders(data));
     });
   }
 
@@ -137,7 +177,6 @@ export default class BlobbyS3 {
       opts = null;
     }
     opts = opts || {};
-    cb = once(cb);
     const dir = path.dirname(fileKey);
 
     if (opts.acl === 'public') {
@@ -154,25 +193,16 @@ export default class BlobbyS3 {
     // else assume private
     
     const client = this.getClient(dir);
-    const bufs = [];
-    client.getFile(fileKey, function (err, res) {
+    const params = {
+      Bucket: client.bucket,
+      Key: fileKey
+    };
+    client.getObject(params, (err, data) => {
       if (err) {
         return void cb(err);
       }
 
-      res.on('data', function (chunk) {
-        bufs.push(chunk);
-      });
-
-      res.on('end', function () {
-        if (res.statusCode !== 200) {
-          return void cb(new Error('storage.s3.fetch.error: '
-            + res.statusCode + ' for ' + (client.urlBase + '/' + fileKey))
-          );
-        }
-
-        cb(null, getInfoHeaders(res.headers), Buffer.concat(bufs));
-      });
+      cb(null, getInfoHeaders(data), data.Body);
     });
   }
 
@@ -193,21 +223,19 @@ export default class BlobbyS3 {
 
     // NOTICE: unfortunately there is no known way of forcing S3 to persist the SOURCE ETag or LastModified, so comparing
     // between foreign sources (S3 and FS) S3 will always report the file as different...
-    cb = once(cb);
-    client.putBuffer(file.buffer, fileKey, getHeadersFromInfo(file.headers), function (err, res) {
+    const params = {
+      Body: file.buffer,
+      Key: fileKey,
+      Bucket: client.bucket,
+      ...getHeadersFromInfo(file.headers)
+    };
+
+    client.putObject(params, function (err, data) {
       if (err) {
         return void cb(err);
       }
 
-      res.resume(); // discard response
-
-      if (res.statusCode !== 200) {
-        return void cb(new Error('storage.s3.store.error: '
-          + res.statusCode + ' for ' + (client.urlBase + '/' + fileKey))
-        );
-      }
-
-      cb(null, getInfoHeaders(res.headers));
+      cb(null, getInfoHeaders(data));
     });
   }
 
@@ -221,26 +249,20 @@ export default class BlobbyS3 {
     const client = this.getClient(path.dirname(sourceKey), { bucket: options.bucket });
     const destBucket = this.getShard(path.dirname(destKey));
 
-    cb = once(cb);
-    const destHeaders = {
-      'x-amz-acl': options.AccessControl || 'public-read'
+    const params = {
+      Bucket: destBucket,
+      CopySource: `/${client.bucket}/${sourceKey}`,
+      Key: destKey,
+      ACL: options.AccessControl || 'public-read',
+      ContentType: options.ContentType,
+      MetadataDirective: options.CopyAndReplace ? 'REPLACE' : 'COPY'
     };
-    if (options.CopyAndReplace) {
-      destHeaders['x-amz-metadata-directive'] = 'REPLACE';
-    }
-    const req = client.copyTo(sourceKey, destBucket, destKey, destHeaders);
-    req.on('response', res => {
-      if (res.statusCode !== 200) {
-        return void cb(new Error('storage.s3.copy.error: '
-          + res.statusCode + ' for ' + (client.urlBase + '/' + destKey))
-        );
-      }
 
-      res.resume(); // discard response
-      cb(null, getInfoHeaders(res.headers));
+    client.copyObject(params, (err, data) => {
+      if (err) return void cb(err);
+
+      cb(null, getInfoHeaders(data));
     });
-    req.on('error', cb);
-    req.end();
   }
 
   setACL(fileKey, acl, cb) {
@@ -249,22 +271,17 @@ export default class BlobbyS3 {
     // NOTICE: unfortunately there is no known way of forcing S3 to persist the SOURCE ETag or LastModified, so comparing
     // between foreign sources (S3 and FS) S3 will always report the file as different...
 
-    cb = once(cb);
+    const params = {
+      Bucket: client.bucket,
+      Key: fileKey,
+      ACL: acl
+    };
 
-    const req = client.request('PUT', encodeSpecialCharacters(fileKey) + '?acl', { 'x-amz-acl': acl });
-    req.on('response', res => {
-      if (res.statusCode !== 200) {
-        return void cb(new Error('storage.s3.setACL.error: '
-          + res.statusCode + ' for ' + (client.urlBase + '/' + fileKey))
-        );
-      }
+    client.putObjectAcl(params, err => {
+      if (err) return void cb(err);
 
-      res.resume(); // discard response
-      
       cb();
     });
-    req.on('error', cb);
-    req.end();
   }
 
   /*
@@ -273,17 +290,13 @@ export default class BlobbyS3 {
   remove(fileKey, cb) {
     const client = this.getClient(path.dirname(fileKey));
 
-    cb = once(cb);
-    client.deleteFile(fileKey, function (err, res) {
-      if (err) {
-        return void cb(err);
-      }
+    const params = {
+      Bucket: client.bucket,
+      Key: fileKey
+    };
 
-      res.resume(); // discard response
-
-      if (res.statusCode !== 200 && res.statusCode !== 204) {
-        return void cb(new Error(`S3.remove executed 2xx for ${fileKey} but got ${res.statusCode}`));
-      }
+    client.deleteObject(params, err => {
+      if (err) return void cb(err);
 
       cb();
     });
@@ -302,16 +315,15 @@ export default class BlobbyS3 {
         if (files.length === 0) return void cb(null, filesDeleted);
 
         const client = $this.getClient(dir);
-        client.deleteMultiple(files.map(f => f.Key), (err, res) => {
-          if (err) return void cb(err);
-
-          res.resume(); // discard response
-
-          if (res.statusCode !== 200) {
-            return void cb(new Error('storage.s3.removeDirectory.error: '
-              + res.statusCode + ' for ' + (client.urlBase + '/' + dir))
-            );
+        const params = {
+          Bucket: client.bucket,
+          Delete: {
+            Objects: files.map(f => ({ Key: f.Key })),
+            Quiet: false
           }
+        };    
+        client.deleteObjects(params, (err, data) => {
+          if (err) return void cb(err);
 
           filesDeleted += files.length;
           if (!lastKey) return cb(null, filesDeleted); // no more to delete 
@@ -346,8 +358,8 @@ export default class BlobbyS3 {
     opts = opts || {};
 
     const params = {
-      prefix: dir + ((dir.length === 0 || dir[dir.length - 1] === '/') ? '' : '/'), // prefix must always end with `/` if not root
-      delimiter: typeof opts.delimiter === 'string' ? opts.delimiter : opts.deepQuery ? '' : '/'
+      Prefix: dir + ((dir.length === 0 || dir[dir.length - 1] === '/') ? '' : '/'), // prefix must always end with `/` if not root
+      Delimiter: typeof opts.delimiter === 'string' ? opts.delimiter : opts.deepQuery ? '' : '/'
     };
     let forcedBucketIndex;
     const { bucketStart, bucketEnd } = this.options;
@@ -355,21 +367,19 @@ export default class BlobbyS3 {
       const lastKeySplit = opts.lastKey.split(':');
       forcedBucketIndex = parseInt(lastKeySplit[0]);
       if (lastKeySplit.length > 1) { // only set a (resume) marker if one was provided
-        params.marker = lastKeySplit.slice(1).join(':'); // rebuild marker after removing index
+        params.Marker = lastKeySplit.slice(1).join(':'); // rebuild marker after removing index
       }
     } else if (opts.deepQuery && typeof bucketStart === 'number' && typeof bucketEnd === 'number') {
       // if no key provided, doing a deep query, default forcedBucketIndex
       forcedBucketIndex = bucketStart;
     }
-    if (opts.maxKeys) params['max-keys'] = opts.maxKeys;
+    if (opts.maxKeys) params.MaxKeys = opts.maxKeys;
 
     const client = this.getClient(dir, { forcedIndex: forcedBucketIndex });
-    cb = once(cb);
-    client.list(params, (err, data) => {
+    params.Bucket = client.bucket;
+    client.listObjects(params, (err, data) => {
       data = data || {}; // default in case of error
       if (err) return void cb(err);
-      // only return error if not related to key not found (commonly due to bucket deletion)
-      if (data.Code && data.Code !== 'NoSuchKey') return cb(new Error(data.Code));
 
       const files = data.Contents || [];
       // remove S3's tail delimiter
@@ -388,54 +398,21 @@ export default class BlobbyS3 {
     });
   }
 
-  /*
-   This is not a persisted client, so it's OK to create
-   one instance per request.
-  */
-  getClient(dir, { forcedIndex, bucket } = {}) {
-    bucket = bucket || this.getShard(dir, forcedIndex);
-
-    const opts = extend(true, { }, this.options, { bucket });
-    opts.agent = this.agent;
-    return knox.createClient(opts);
-  }
-
-  getShard(dir, forcedIndex) {
-    const {bucketPrefix, bucketStart, bucketEnd} = this.options;
-    let bucket = bucketPrefix;
-    const range = bucketEnd - bucketStart;
-    if (!isNaN(range) && range > 0) {
-      if (typeof forcedIndex === 'number' && forcedIndex >= bucketStart && forcedIndex <= bucketEnd) {
-        // if forced index is provided, use that instead
-        bucket += forcedIndex;
-      } else { // compute bucket by dir hash
-        // hash only needs to span directory structure, and is OK to be consistent
-        // across environments for predictability and ease of maintenance
-        const hash = farmhash.hash32(dir);
-        const bucketIndex = hash % (range + 1); // 0-N
-        bucket += (bucketStart + bucketIndex);
-      }
-    }
-
-    return bucket;
-  }
-
   httpRequest(method, bucket, fileKey, cb) {
-    var client = this.options.secure ? https : http;
-
     const opts = {
-      protocol: this.options.secure ? 'https:' : 'http:',
-      host: this.options.style === 'path' ? this.options.endpoint
+      protocol: 'https:',
+      host: this.options.s3ForcePathStyle ? this.options.endpoint
         : `${bucket}.${this.options.endpoint}`, // fallback to subdomain
-      port: this.options.port,
-      agent: this.agent, // use same agent as knox
+      agent: this.agent, // use same agent as s3 client
       method,
-      path: encodeSpecialCharacters(this.options.style === 'path' ? `/${bucket}/${fileKey}`
+      path: encodeSpecialCharacters(this.options.s3ForcePathStyle ? `/${bucket}/${fileKey}`
         : `/${fileKey}`)
     };
 
+    cb = once(cb);
+
     var bufs = [];
-    client.request(opts, res => {
+    https.request(opts, res => {
       if (res.statusCode !== 200) {
         return void cb(new Error('http.request.error: '
           + res.statusCode + ' for ' + opts.path)
@@ -452,18 +429,20 @@ export default class BlobbyS3 {
 }
 
 const gValidHeaders = {
+  'lastmodified': 'LastModified',
   'last-modified': 'LastModified',
+  'contentlength': 'Size',
   'content-length': 'Size',
   'etag': 'ETag',
-  'content-type': 'ContentType'
-};
-const gReverseHeaders = {
-  ContentType: 'Content-Type',
-  AccessControl: 'x-amz-acl'
+  'content-type': 'ContentType',
+  'contenttype': 'ContentType'
 };
 
 function getInfoHeaders(reqHeaders) {
   const info = {};
+  if (reqHeaders.Metadata) {
+    info.CustomHeaders = reqHeaders.Metadata;
+  }
   Object.keys(reqHeaders).forEach(k => {
     const kLower = k.toLowerCase();
     const validHeader = gValidHeaders[kLower];
@@ -476,29 +455,29 @@ function getInfoHeaders(reqHeaders) {
     }
     const val = reqHeaders[k];
     if (!val) return;
-    info[validHeader] = validHeader === 'LastModified' ? new Date(val) : val; // map the values
-    if (validHeader === 'Size') info[validHeader] = parseInt(val); // number required for Size
+    info[validHeader] = validHeader === 'LastModified' && typeof val === 'string' ? new Date(val) : val; // map the values
+    if (validHeader === 'Size') info[validHeader] = parseInt(val, 10); // number required for Size
   });
 
   return info;
 }
 
 function getHeadersFromInfo(info) {
-  const headers = {};
-  Object.keys(info).forEach(k => {
-    const validHeader = gReverseHeaders[k];
-    if (!validHeader) return;
-    const val = info[k];
-    if (!val) return;
-    headers[validHeader] = val; // map the values
-  });
-  Object.keys(info.CustomHeaders || {}).forEach(k => {
-    const validHeader = /^amz\-meta\-/i.test(k);
-    if (!validHeader) return;
-    headers['x-' + k] = info.CustomHeaders[k];
-  });
+  const ret = {};
 
-  return headers;
+  if (info.ContentType) {
+    ret.ContentType = info.ContentType;
+  }
+
+  if (info.AccessControl) {
+    ret.ACL = info.AccessControl;
+  }
+
+  if (info.CustomHeaders) {
+    ret.Metadata = info.CustomHeaders;
+  }
+
+  return ret;
 }
 
 /* PULLED FROM knox
