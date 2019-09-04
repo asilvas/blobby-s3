@@ -6,6 +6,7 @@ const https = require('https');
 const URL = require('url');
 const S3 = require('aws-sdk/clients/s3');
 const plimit = require('p-limit');
+const HttpError = require('./httpError');
 
 module.exports = class BlobbyS3 {
   constructor(opts) {
@@ -191,7 +192,7 @@ module.exports = class BlobbyS3 {
       });
     }
     // else assume private
-    
+
     const client = this.getClient(dir);
     const params = {
       Bucket: client.bucket,
@@ -321,12 +322,12 @@ module.exports = class BlobbyS3 {
             Objects: files.map(f => ({ Key: f.Key })),
             Quiet: false
           }
-        };    
+        };
         client.deleteObjects(params, (err, data) => {
           if (err) return void cb(err);
 
           filesDeleted += files.length;
-          if (!lastKey) return cb(null, filesDeleted); // no more to delete 
+          if (!lastKey) return cb(null, filesDeleted); // no more to delete
 
           // continue recursive deletions
           _listAndDelete(dir, lastKey, cb);
@@ -413,10 +414,10 @@ module.exports = class BlobbyS3 {
 
     var bufs = [];
     https.request(opts, res => {
-      if (res.statusCode !== 200) {
-        return void cb(new Error('http.request.error: '
-          + res.statusCode + ' for ' + opts.path)
-        );
+      const { statusCode } = res;
+      if (statusCode !== 200) {
+        const message = `http.request.error: ${statusCode} for ${opts.path}`;
+        return void cb(new HttpError(message, statusCode));
       }
 
       res.on('data', chunk => bufs.push(chunk));
