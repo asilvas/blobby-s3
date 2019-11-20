@@ -432,6 +432,7 @@ module.exports = class BlobbyS3 {
 const gValidHeaders = {
   'lastmodified': 'LastModified',
   'last-modified': 'LastModified',
+  'cache-control': 'CacheControl',
   'contentlength': 'Size',
   'content-length': 'Size',
   'etag': 'ETag',
@@ -468,6 +469,10 @@ function getHeadersFromInfo(info) {
 
   if (info.ContentType) {
     ret.ContentType = info.ContentType;
+  }
+
+  if (info.CacheControl) {
+    ret.CacheControl = info.CacheControl;
   }
 
   if (info.AccessControl) {
