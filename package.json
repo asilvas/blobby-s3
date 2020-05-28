@@ -1,6 +1,6 @@
 {
   "name": "blobby-s3",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "An S3 client for Blobby, powered by Knox",
   "main": "src/index.js",
   "scripts": {
@@ -18,10 +18,10 @@
   },
   "homepage": "https://github.com/asilvas/blobby-s3#readme",
   "dependencies": {
-    "aws-sdk": "^2.476.0",
-    "farmhash": "^2.1.0",
+    "aws-sdk": "^2.686.0",
+    "farmhash": "^3.1.0",
     "once": "^1.4.0",
-    "p-limit": "^2.2.0"
+    "p-limit": "^2.3.0"
   },
   "devDependencies": {},
   "files": [
