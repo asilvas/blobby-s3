@@ -14,6 +14,7 @@ module.exports = class BlobbyS3 {
       endpoint: 's3.amazonaws.com',
       s3ForcePathStyle: true,
       s3BucketEndpoint: false,
+      privateOnly: false
     }, opts);
 
     // some backward compatibility to ease transition from knox
@@ -49,7 +50,7 @@ module.exports = class BlobbyS3 {
     bucket = bucket || this.getShard(dir, forcedIndex);
 
     // copy
-    const { bucketPrefix, bucketStart, bucketEnd, ...opts } = this.options;
+    const { bucketPrefix, bucketStart, bucketEnd, privateOnly, ...opts } = this.options;
 
     const s3 = new S3(opts);
     s3.bucket = bucket;
@@ -141,7 +142,7 @@ module.exports = class BlobbyS3 {
     opts = opts || {};
     const dir = path.dirname(fileKey);
 
-    if (opts.acl === 'public') {
+    if (!this.options.privateOnly && opts.acl === 'public') {
       const bucket = this.getShard(dir);
 
       return void this.httpRequest('HEAD', bucket, fileKey, (err, res, data) => {
@@ -179,8 +180,7 @@ module.exports = class BlobbyS3 {
     }
     opts = opts || {};
     const dir = path.dirname(fileKey);
-
-    if (opts.acl === 'public') {
+    if (!this.options.privateOnly && opts.acl === 'public') {
       const bucket = this.getShard(dir);
 
       return void this.httpRequest('GET', bucket, fileKey, (err, res, data) => {
