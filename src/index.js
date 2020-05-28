@@ -228,7 +228,7 @@ module.exports = class BlobbyS3 {
       Body: file.buffer,
       Key: fileKey,
       Bucket: client.bucket,
-      ...getHeadersFromInfo(file.headers)
+      ...getHeadersFromInfo(file.headers, this.options)
     };
 
     client.putObject(params, function (err, data) {
@@ -254,7 +254,7 @@ module.exports = class BlobbyS3 {
       Bucket: destBucket,
       CopySource: `/${client.bucket}/${sourceKey}`,
       Key: destKey,
-      ACL: options.AccessControl || 'public-read',
+      ACL: (!this.options.privateOnly ? options.AccessControl : 'private') || 'public-read',
       ContentType: options.ContentType,
       MetadataDirective: options.CopyAndReplace ? 'REPLACE' : 'COPY'
     };
@@ -464,7 +464,7 @@ function getInfoHeaders(reqHeaders) {
   return info;
 }
 
-function getHeadersFromInfo(info) {
+function getHeadersFromInfo(info, options) {
   const ret = {};
 
   if (info.ContentType) {
@@ -476,7 +476,7 @@ function getHeadersFromInfo(info) {
   }
 
   if (info.AccessControl) {
-    ret.ACL = info.AccessControl;
+    ret.ACL = !options.privateOnly ? info.AccessControl : 'private';
   }
 
   if (info.CustomHeaders) {
