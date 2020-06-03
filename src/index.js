@@ -40,6 +40,7 @@ module.exports = class BlobbyS3 {
 
     this.endpoint = URL.parse(this.options.endpoint);
     this.agent = this.options.httpOptions && this.options.httpOptions.agent;
+    this.http = this.endpoint.protocol === 'http:' ? http : https;
   }
 
   /*
@@ -401,9 +402,10 @@ module.exports = class BlobbyS3 {
 
   httpRequest(method, bucket, fileKey, cb) {
     const opts = {
-      protocol: 'https:',
-      host: this.options.s3ForcePathStyle ? this.options.endpoint
-        : `${bucket}.${this.options.endpoint}`, // fallback to subdomain
+      protocol: this.endpoint.protocol || 'https:',
+      host: this.options.s3ForcePathStyle ? this.endpoint.host
+        : `${bucket}.${this.endpoint.host}`, // fallback to subdomain
+      port: this.endpoint.port,
       agent: this.agent, // use same agent as s3 client
       method,
       path: encodeSpecialCharacters(this.options.s3ForcePathStyle ? `/${bucket}/${fileKey}`
@@ -413,7 +415,7 @@ module.exports = class BlobbyS3 {
     cb = once(cb);
 
     var bufs = [];
-    https.request(opts, res => {
+    this.http.request(opts, res => {
       const { statusCode } = res;
       if (statusCode !== 200) {
         const message = `http.request.error: ${statusCode} for ${opts.path}`;
