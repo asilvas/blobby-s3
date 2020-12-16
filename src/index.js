@@ -435,6 +435,7 @@ const gValidHeaders = {
   'lastmodified': 'LastModified',
   'last-modified': 'LastModified',
   'cache-control': 'CacheControl',
+  'cachecontrol': 'CacheControl',
   'contentlength': 'Size',
   'content-length': 'Size',
   'etag': 'ETag',
