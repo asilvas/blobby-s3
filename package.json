@@ -21,7 +21,7 @@
     "aws-sdk": "^2.686.0",
     "farmhash": "^3.2.2",
     "once": "^1.4.0",
-    "p-limit": "^4.0.0"
+    "p-limit": "^3.1.0"
   },
   "devDependencies": {},
   "files": [
