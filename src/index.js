@@ -4,7 +4,7 @@ const once = require('once');
 const http = require('http');
 const https = require('https');
 const URL = require('url');
-const { S3Client } = require('@aws-sdk/client-s3');
+const { S3 } = require('@aws-sdk/client-s3');
 const plimit = require('p-limit');
 const HttpError = require('./httpError');
 
@@ -53,7 +53,7 @@ module.exports = class BlobbyS3 {
     // copy
     const { bucketPrefix, bucketStart, bucketEnd, privateOnly, ...opts } = this.options;
 
-    const s3 = new S3Client(opts);
+    const s3 = new S3(opts);
     s3.bucket = bucket;
 
     return s3;
