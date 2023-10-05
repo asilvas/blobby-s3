@@ -11,10 +11,7 @@ const HttpError = require('./httpError');
 module.exports = class BlobbyS3 {
   constructor(opts) {
     this.options = Object.assign({
-      endpoint: 's3.amazonaws.com',
-      s3ForcePathStyle: true,
-      s3BucketEndpoint: false,
-      privateOnly: false
+      privateOnly: true
     }, opts);
 
     // some backward compatibility to ease transition from knox
@@ -38,9 +35,9 @@ module.exports = class BlobbyS3 {
       this.httpOptions.agent = new http.Agent(this.options.httpOptions.agent);
     }
 
-    this.endpoint = URL.parse(this.options.endpoint);
+    this.endpoint = this.options.endpoint && URL.parse(this.options.endpoint);
     this.agent = this.options.httpOptions && this.options.httpOptions.agent;
-    this.http = this.endpoint.protocol === 'http:' ? http : https;
+    this.http = this.endpoint && this.endpoint.protocol === 'http:' ? http : https;
   }
 
   /*
@@ -193,7 +190,7 @@ module.exports = class BlobbyS3 {
       Bucket: client.bucket,
       Key: fileKey
     };
-    client.getObject(params).then(data => cb(null, getInfoHeaders(data), data.Body), cb);
+    client.getObject(params).then(res => res.Body.transformToByteArray()).then(data => cb(null, getInfoHeaders(data), data.Body), cb);
   }
 
   /*
