@@ -18,12 +18,11 @@
   },
   "homepage": "https://github.com/asilvas/blobby-s3#readme",
   "dependencies": {
-    "aws-sdk": "^2.686.0",
+    "@aws-sdk/client-s3": "^3.425.0",
     "farmhash": "^3.2.2",
     "once": "^1.4.0",
     "p-limit": "^3.1.0"
   },
-  "devDependencies": {},
   "files": [
     "src",
     "LICENSE",

@@ -4,7 +4,7 @@ const once = require('once');
 const http = require('http');
 const https = require('https');
 const URL = require('url');
-const S3 = require('aws-sdk/clients/s3');
+const { S3Client } = require('@aws-sdk/client-s3');
 const plimit = require('p-limit');
 const HttpError = require('./httpError');
 
@@ -53,7 +53,7 @@ module.exports = class BlobbyS3 {
     // copy
     const { bucketPrefix, bucketStart, bucketEnd, privateOnly, ...opts } = this.options;
 
-    const s3 = new S3(opts);
+    const s3 = new S3Client(opts);
     s3.bucket = bucket;
 
     return s3;
@@ -95,25 +95,25 @@ module.exports = class BlobbyS3 {
       const params = {
         Bucket: client.bucket,
         LifecycleConfiguration: {
-         Rules: [
-          {
-            ID: 'TTL',
-            Filter: {
-              Prefix: lifecycle.prefix || ''
-            },
-            Status: "Enabled",
-            Expiration: {
-              Days: lifecycle.days
+          Rules: [
+            {
+              ID: 'TTL',
+              Filter: {
+                Prefix: lifecycle.prefix || ''
+              },
+              Status: "Enabled",
+              Expiration: {
+                Days: lifecycle.days
+              }
             }
-          }
-         ]
+          ]
         }
-       };
+      };
 
-      return client.putBucketLifecycleConfiguration(params).promise()
+      return client.putBucketLifecycleConfiguration(params)
         .then(() => console.log('LifeCycle rules applied successfully'))
         .catch(err => console.error('Failed to apply lifecycle rules:', params, err.stack || err))
-      ;
+        ;
 
     });
 
@@ -161,13 +161,7 @@ module.exports = class BlobbyS3 {
       Bucket: client.bucket,
       Key: fileKey
     };
-    client.headObject(params, (err, data) => {
-      if (err) {
-        return void cb(err);
-      }
-
-      cb(null, getInfoHeaders(data));
-    });
+    client.headObject(params).then(data => cb(null, getInfoHeaders(data)), err => cb(err));
   }
 
   /*
@@ -199,13 +193,7 @@ module.exports = class BlobbyS3 {
       Bucket: client.bucket,
       Key: fileKey
     };
-    client.getObject(params, (err, data) => {
-      if (err) {
-        return void cb(err);
-      }
-
-      cb(null, getInfoHeaders(data), data.Body);
-    });
+    client.getObject(params).then(data => cb(null, getInfoHeaders(data), data.Body), cb);
   }
 
   /*
@@ -232,13 +220,7 @@ module.exports = class BlobbyS3 {
       ...getHeadersFromInfo(file.headers, this.options)
     };
 
-    client.putObject(params, function (err, data) {
-      if (err) {
-        return void cb(err);
-      }
-
-      cb(null, getInfoHeaders(data));
-    });
+    client.putObject(params).then(data => cb(null, getInfoHeaders(data)), cb);
   }
 
   // support for x-amz-copy-source: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectCOPY.html
@@ -260,11 +242,7 @@ module.exports = class BlobbyS3 {
       MetadataDirective: options.CopyAndReplace ? 'REPLACE' : 'COPY'
     };
 
-    client.copyObject(params, (err, data) => {
-      if (err) return void cb(err);
-
-      cb(null, getInfoHeaders(data));
-    });
+    client.copyObject(params).then(data => cb(null, getInfoHeaders(data)), cb);
   }
 
   setACL(fileKey, acl, cb) {
@@ -279,11 +257,7 @@ module.exports = class BlobbyS3 {
       ACL: acl
     };
 
-    client.putObjectAcl(params, err => {
-      if (err) return void cb(err);
-
-      cb();
-    });
+    client.putObjectAcl(params).then(cb, cb);
   }
 
   /*
@@ -297,11 +271,7 @@ module.exports = class BlobbyS3 {
       Key: fileKey
     };
 
-    client.deleteObject(params, err => {
-      if (err) return void cb(err);
-
-      cb();
-    });
+    client.deleteObject(params).then(cb, cb);
   }
 
   /*
@@ -324,15 +294,13 @@ module.exports = class BlobbyS3 {
             Quiet: false
           }
         };
-        client.deleteObjects(params, (err, data) => {
-          if (err) return void cb(err);
-
+        client.deleteObjects(params).then(() => {
           filesDeleted += files.length;
           if (!lastKey) return cb(null, filesDeleted); // no more to delete
 
           // continue recursive deletions
           _listAndDelete(dir, lastKey, cb);
-        });
+        }, cb);
       });
     };
 
@@ -379,10 +347,7 @@ module.exports = class BlobbyS3 {
 
     const client = this.getClient(dir, { forcedIndex: forcedBucketIndex });
     params.Bucket = client.bucket;
-    client.listObjects(params, (err, data) => {
-      data = data || {}; // default in case of error
-      if (err) return void cb(err);
-
+    client.listObjects(params).then(data => {
       const files = data.Contents || [];
       // remove S3's tail delimiter
       const dirs = (data.CommonPrefixes || []).map(dir => dir.Prefix.substr(0, dir.Prefix.length - 1));
@@ -397,7 +362,7 @@ module.exports = class BlobbyS3 {
       }
 
       cb(null, files, dirs, lastKey);
-    });
+    }, cb);
   }
 
   httpRequest(method, bucket, fileKey, cb) {
