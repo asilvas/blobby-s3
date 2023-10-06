@@ -125,7 +125,7 @@ module.exports = class BlobbyS3 {
       initBucketTasks.push(getInitBucketTask(bucketPrefix));
     }
 
-    Promise.all(initBucketTasks).then(cb).catch(cb);
+    Promise.all(initBucketTasks).then(() => cb()).catch(cb);
   }
 
   /*
@@ -190,7 +190,10 @@ module.exports = class BlobbyS3 {
       Bucket: client.bucket,
       Key: fileKey
     };
-    client.getObject(params).then(res => res.Body.transformToByteArray()).then(data => cb(null, getInfoHeaders(data), data.Body), cb);
+    client.getObject(params).then(async res => {
+      const body = await res.Body.transformToByteArray();
+      cb(null, getInfoHeaders(res), body)
+    }, cb);
   }
 
   /*
@@ -254,7 +257,7 @@ module.exports = class BlobbyS3 {
       ACL: acl
     };
 
-    client.putObjectAcl(params).then(cb, cb);
+    client.putObjectAcl(params).then(() => cb(), cb);
   }
 
   /*
@@ -268,7 +271,7 @@ module.exports = class BlobbyS3 {
       Key: fileKey
     };
 
-    client.deleteObject(params).then(cb, cb);
+    client.deleteObject(params).then(() => cb(), cb);
   }
 
   /*
