@@ -8,10 +8,13 @@ const { S3 } = require('@aws-sdk/client-s3');
 const plimit = require('p-limit');
 const HttpError = require('./httpError');
 
+const gS3Clients = {};
+
 module.exports = class BlobbyS3 {
   constructor(opts) {
     this.options = Object.assign({
-      privateOnly: true
+      privateOnly: true,
+      maxAttempts: 3,
     }, opts);
 
     // some backward compatibility to ease transition from knox
@@ -50,10 +53,13 @@ module.exports = class BlobbyS3 {
     // copy
     const { bucketPrefix, bucketStart, bucketEnd, privateOnly, ...opts } = this.options;
 
-    const s3 = new S3(opts);
-    s3.bucket = bucket;
+    const clientKey = JSON.stringify(opts); // dumb but sufficiently reliable way to cache clients
+    let client = gS3Clients[clientKey];
+    if (!client) { // unique client
+      gS3Clients[clientKey] = client = new S3(opts);
+    }
 
-    return s3;
+    return { client, bucket };
   }
 
   getShard(dir, forcedIndex) {
@@ -87,10 +93,10 @@ module.exports = class BlobbyS3 {
 
     const $this = this;
     const getInitBucketTask = bucketIndex => limit(() => {
-      const client = $this.getClient('', { forcedIndex: bucketIndex !== undefined ? bucketIndex : null });
+      const { client, bucket } = $this.getClient('', { forcedIndex: bucketIndex !== undefined ? bucketIndex : null });
 
       const params = {
-        Bucket: client.bucket,
+        Bucket: bucket,
         LifecycleConfiguration: {
           Rules: [
             {
@@ -153,12 +159,15 @@ module.exports = class BlobbyS3 {
     }
     // else assume private
 
-    const client = this.getClient(dir);
+    const { client, bucket } = this.getClient(dir);
     const params = {
-      Bucket: client.bucket,
+      Bucket: bucket,
       Key: fileKey
     };
-    client.headObject(params).then(data => cb(null, getInfoHeaders(data)), err => cb(err));
+    client.headObject(params).then(data => cb(null, getInfoHeaders(data)), err => {
+      err.statusCode = err.Code === 'NoSuchKey' ? 404 : 500;
+      cb(err);
+    });
   }
 
   /*
@@ -185,15 +194,18 @@ module.exports = class BlobbyS3 {
     }
     // else assume private
 
-    const client = this.getClient(dir);
+    const { client, bucket } = this.getClient(dir);
     const params = {
-      Bucket: client.bucket,
+      Bucket: bucket,
       Key: fileKey
     };
     client.getObject(params).then(async res => {
       const body = await res.Body.transformToByteArray();
       cb(null, getInfoHeaders(res), body)
-    }, cb);
+    }, err => {
+      err.statusCode = err.Code === 'NoSuchKey' ? 404 : 500;
+      cb(err);
+    });
   }
 
   /*
@@ -209,14 +221,14 @@ module.exports = class BlobbyS3 {
       opts = null;
     }
     opts = opts || {};
-    const client = this.getClient(path.dirname(fileKey));
+    const { client, bucket } = this.getClient(path.dirname(fileKey));
 
     // NOTICE: unfortunately there is no known way of forcing S3 to persist the SOURCE ETag or LastModified, so comparing
     // between foreign sources (S3 and FS) S3 will always report the file as different...
     const params = {
       Body: file.buffer,
       Key: fileKey,
-      Bucket: client.bucket,
+      Bucket: bucket,
       ...getHeadersFromInfo(file.headers, this.options)
     };
 
@@ -230,12 +242,12 @@ module.exports = class BlobbyS3 {
       options = {}; // optional
     }
 
-    const client = this.getClient(path.dirname(sourceKey), { bucket: options.bucket });
+    const { client, bucket } = this.getClient(path.dirname(sourceKey), { bucket: options.bucket });
     const destBucket = this.getShard(path.dirname(destKey));
 
     const params = {
       Bucket: destBucket,
-      CopySource: `/${client.bucket}/${sourceKey}`,
+      CopySource: `/${bucket}/${sourceKey}`,
       Key: destKey,
       ACL: (!this.options.privateOnly ? options.AccessControl : 'private') || 'public-read',
       ContentType: options.ContentType,
@@ -246,13 +258,13 @@ module.exports = class BlobbyS3 {
   }
 
   setACL(fileKey, acl, cb) {
-    const client = this.getClient(path.dirname(fileKey));
+    const { client, bucket } = this.getClient(path.dirname(fileKey));
 
     // NOTICE: unfortunately there is no known way of forcing S3 to persist the SOURCE ETag or LastModified, so comparing
     // between foreign sources (S3 and FS) S3 will always report the file as different...
 
     const params = {
-      Bucket: client.bucket,
+      Bucket: bucket,
       Key: fileKey,
       ACL: acl
     };
@@ -264,10 +276,10 @@ module.exports = class BlobbyS3 {
    fileKey: unique id for storage
    */
   remove(fileKey, cb) {
-    const client = this.getClient(path.dirname(fileKey));
+    const { client, bucket } = this.getClient(path.dirname(fileKey));
 
     const params = {
-      Bucket: client.bucket,
+      Bucket: bucket,
       Key: fileKey
     };
 
@@ -286,9 +298,9 @@ module.exports = class BlobbyS3 {
 
         if (files.length === 0) return void cb(null, filesDeleted);
 
-        const client = $this.getClient(dir);
+        const { client, bucket } = $this.getClient(dir);
         const params = {
-          Bucket: client.bucket,
+          Bucket: bucket,
           Delete: {
             Objects: files.map(f => ({ Key: f.Key })),
             Quiet: false
@@ -345,8 +357,8 @@ module.exports = class BlobbyS3 {
     }
     if (opts.maxKeys) params.MaxKeys = opts.maxKeys;
 
-    const client = this.getClient(dir, { forcedIndex: forcedBucketIndex });
-    params.Bucket = client.bucket;
+    const { client, bucket } = this.getClient(dir, { forcedIndex: forcedBucketIndex });
+    params.Bucket = bucket;
     client.listObjects(params).then(data => {
       const files = data.Contents || [];
       // remove S3's tail delimiter
